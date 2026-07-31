@@ -34,6 +34,7 @@
 
 ## 📂 Project Structure
 
+```text
 AI-PM-SYSTEM/
 ├── .venv/                 # Python virtual environment
 ├── app/
@@ -58,3 +59,4 @@ AI-PM-SYSTEM/
 ├── .gitignore             # Version control exclusion rules
 ├── requirements.txt       # Python dependencies list
 └── README.md              # Project documentation
+```
