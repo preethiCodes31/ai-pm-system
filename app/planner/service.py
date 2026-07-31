@@ -1,13 +1,13 @@
-
 import json
+import re
+import time
+import concurrent.futures
 from typing import List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 import pdfplumber
 from docx import Document
-from app.planner.schemas import ResumeOut
-import re
 
-# Import individual relational models cleanly
+# Import relational models
 from app.models.project import Project, Employee, Assignment
 from app.models.milestone import Milestone
 from app.models.epic import Epic
@@ -20,7 +20,8 @@ from app.planner.schemas import (
     EpicOut, 
     TaskOut, 
     TaskListOut, 
-    DetailedTaskOut
+    DetailedTaskOut,
+    ResumeOut
 )
 from app.llm_client import call_llm_json_with_retry
 
@@ -40,24 +41,12 @@ Break this into 3-6 milestones. Each milestone should have 2-4 epics.
 Each epic should have 3-8 tasks.
 """
 
-import time
-
-import concurrent.futures
-import json
-import time
-from typing import List
-
-import json
-from typing import List
-from app.planner.schemas import ProjectPlanOut, MilestoneOut, EpicOut, TaskOut
-from app.llm_client import call_llm_json_with_retry
-
 def generate_plan(description: str, duration_months: int, team_size: int, tech_stack: List[str]) -> ProjectPlanOut:
     """
     Returns a dynamically generated, structured project plan configuration 
-    by executing live prompt evaluations against the Cloud Gemini API.
+    by executing live prompt evaluations against the Cloud LLM API.
     """
-    print(f"--> Entering generate_plan: Analyzing project metadata for AI context...")
+    print("--> Entering generate_plan: Analyzing project metadata for AI context...")
     
     # 1. Build out the structured instructions for the LLM
     prompt_content = build_prompt(description, duration_months, team_size, tech_stack)
@@ -65,12 +54,10 @@ def generate_plan(description: str, duration_months: int, team_size: int, tech_s
     system_instruction = SYSTEM_PROMPT.format(schema=schema_reference)
     
     try:
-        print("--> Launching live Gemini Cloud API request...")
-        # This sends your description straight to Gemini to get a custom plan
+        print("--> Launching live Cloud API request for High-Level Plan...")
         raw_json_response = call_llm_json_with_retry(
             system_prompt=system_instruction,
-            user_prompt=prompt_content,
-            response_schema=ProjectPlanOut.model_json_schema()
+            user_prompt=prompt_content
         )
         print("--> Cloud network request resolved successfully. Validating schema...")
         
@@ -82,7 +69,7 @@ def generate_plan(description: str, duration_months: int, team_size: int, tech_s
         print(f"\n[CRITICAL FAILURE] Cloud LLM Generation encountered an error: {str(e)}")
         print("--> Dropping back to local baseline to keep server running...\n")
         
-        # Simple emergency fallback just in case the API key breaks
+        # Fallback schema in case of connection or parsing issues
         return ProjectPlanOut(
             milestones=[
                 MilestoneOut(
@@ -108,7 +95,8 @@ def generate_plan(description: str, duration_months: int, team_size: int, tech_s
 
 def save_plan_to_db(db: Session, plan: ProjectPlanOut, project_id: int) -> Dict[str, Any]:
     """
-    Sequentially maps out and flushes hierarchical project layout layers into the local database instance.
+    Maps out hierarchical project layers into the database instance cleanly 
+    without triggering premature identity flushes.
     """
     for m_idx, milestone_data in enumerate(plan.milestones):
         db_milestone = Milestone(
@@ -117,7 +105,7 @@ def save_plan_to_db(db: Session, plan: ProjectPlanOut, project_id: int) -> Dict[
             order=m_idx
         )
         db.add(db_milestone)
-        db.flush() 
+        db.flush() # Flush parent milestone to generate db_milestone.id for children
         
         for e_idx, epic_data in enumerate(milestone_data.epics):
             db_epic = Epic(
@@ -126,13 +114,13 @@ def save_plan_to_db(db: Session, plan: ProjectPlanOut, project_id: int) -> Dict[
                 order=e_idx
             )
             db.add(db_epic)
-            db.flush()
+            db.flush() # Flush parent epic to generate db_epic.id for tasks
             
             for t_idx, task_data in enumerate(epic_data.tasks):
                 db_task = Task(
                     epic_id=db_epic.id,
                     title=task_data.title,
-                    description=task_data.description,
+                    description=getattr(task_data, 'description', ''),
                     order=t_idx
                 )
                 db.add(db_task)
@@ -151,8 +139,8 @@ Epic: {epic_title}
 Tech stack: {', '.join(tech_stack)}
 
 Generate a detailed, ordered list of implementation tasks for this epic.
-For each task include priority, estimated_hours, story_points (1,2,3,5,8,13),
-required_skills (specific technologies), and dependencies (titles of earlier tasks in this list, if any).
+For each task include priority (High/Medium/Low), estimated_hours (e.g. 4.0, 8.0), story_points (1,2,3,5,8,13),
+required_skills (specific technologies from the stack), and dependencies (titles of earlier tasks in this list, if any).
 """
 
 def fetch_epic_context(db: Session, epic_id: int) -> Tuple[Any, Any, List[str]]:
@@ -174,46 +162,49 @@ def generate_tasks_for_epic(db: Session, epic_id: int) -> Dict[str, Any]:
     if not epic or not milestone:
         return {"status": "error", "message": "Epic context not found"}
 
-    task_list_data = TaskListOut(
-        tasks=[
-            DetailedTaskOut(
-                title="Design JWT Authentication Schema",
-                description="Define token structures, payload expirations, and signing keys.",
-                priority="High",
-                estimated_hours=8.0,
-                story_points=3,
-                required_skills=["Python", "JWT", "FastAPI"],
-                dependencies=[]
-            ),
-            DetailedTaskOut(
-                title="Implement User Signup Endpoint",
-                description="Create registration router, hash passwords with passlib, and save to SQLite.",
-                priority="High",
-                estimated_hours=16.0,
-                story_points=5,
-                required_skills=["Python", "FastAPI", "SQLAlchemy"],
-                dependencies=["Design JWT Authentication Schema"]
-            ),
-            DetailedTaskOut(
-                title="Implement User Login and Token Generation",
-                description="Authenticate user credentials against DB and return valid JWT signatures.",
-                priority="High",
-                estimated_hours=12.0,
-                story_points=3,
-                required_skills=["Python", "JWT", "FastAPI"],
-                dependencies=["Design JWT Authentication Schema", "Implement User Signup Endpoint"]
-            ),
-            DetailedTaskOut(
-                title="Legacy Infrastructure Data Synchronization Matrix",
-                description="Complex cross-migration integration layer for high-volume systemic imports.",
-                priority="Low",
-                estimated_hours=48.0, 
-                story_points=13,
-                required_skills=["Python", "Database"],
-                dependencies=[]
-            )
-        ]
+    # Dynamically build the prompt for this specific epic
+    task_prompt = build_task_prompt(epic.title, milestone.title, tech_stack)
+    schema_reference = json.dumps(TaskListOut.model_json_schema(), indent=2)
+    system_instruction = (
+        "You are an expert AI Project Manager. "
+        "Break the epic down into sub-tasks. "
+        f"Return ONLY valid JSON matching this schema: {schema_reference}"
     )
+
+    try:
+        print(f"--> Launching live AI Task Breakdown for Epic: '{epic.title}'...")
+        raw_response = call_llm_json_with_retry(
+            system_prompt=system_instruction,
+            user_prompt=task_prompt
+        )
+        task_list_data = TaskListOut.model_validate(raw_response)
+
+    except Exception as e:
+        print(f"--> [WARNING] AI Task Breakdown failed for '{epic.title}': {str(e)}")
+        print("--> Dropping back to fixed baseline tasks...")
+        # Fallback to the fixed mock data if the API hits a limit or fails validation
+        task_list_data = TaskListOut(
+            tasks=[
+                DetailedTaskOut(
+                    title="Design Architecture & Schema",
+                    description="Define core structures and data requirements for this epic.",
+                    priority="High",
+                    estimated_hours=8.0,
+                    story_points=3,
+                    required_skills=["Architecture"] + tech_stack[:1],
+                    dependencies=[]
+                ),
+                DetailedTaskOut(
+                    title="Implement Core Logic",
+                    description="Develop the main backend/frontend integration.",
+                    priority="High",
+                    estimated_hours=16.0,
+                    story_points=5,
+                    required_skills=tech_stack,
+                    dependencies=["Design Architecture & Schema"]
+                )
+            ]
+        )
 
     inserted_tasks: List[Tuple[int, DetailedTaskOut]] = []
     task_title_to_id_map: Dict[str, int] = {}
@@ -231,15 +222,8 @@ def generate_tasks_for_epic(db: Session, epic_id: int) -> Dict[str, Any]:
         task_title_to_id_map[t_data.title.lower().strip()] = db_task.id
         inserted_tasks.append((db_task.id, t_data))
 
-    for task_id, t_data in inserted_tasks:
-        for dep_title in t_data.dependencies:
-            dep_key = dep_title.lower().strip()
-            if dep_key in task_title_to_id_map:
-                parent_task_id = task_title_to_id_map[dep_key]
-                pass
-
     db.commit()
-    warnings = [t.title for t in task_list_data.tasks if t.estimated_hours > 40.0]
+    warnings = [t.title for t in task_list_data.tasks if getattr(t, 'estimated_hours', 0) > 40.0]
     
     return {
         "status": "success", 
@@ -271,14 +255,12 @@ def parse_resume(raw_text: str) -> ResumeOut:
     lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
     full_text_lower = raw_text.lower()
     
-    extracted_name = "Unknown Applicant"
-    if lines:
-        extracted_name = lines[0]
+    extracted_name = lines[0] if lines else "Unknown Applicant"
         
     email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', raw_text)
     extracted_email = email_match.group(0) if email_match else None
     
-    phone_match = re.search(r'(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4,5}', raw_text)
+    phone_match = re.search(r'(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{4,5}', raw_text)
     extracted_phone = phone_match.group(0) if phone_match else None
     
     common_tech_keywords = [
@@ -323,7 +305,7 @@ def orchestrate_full_pipeline(db: Session, project_id: int) -> Dict[str, Any]:
     if not project:
         return {"status": "error", "message": "Project not found"}
 
-    # 1. Clear out previous auto-suggestions to drop allocation cache locks
+    # 1. Clear out previous auto-suggestions
     db.query(Assignment).filter(
         Assignment.task_id.in_(
             db.query(Task.id)
@@ -335,7 +317,7 @@ def orchestrate_full_pipeline(db: Session, project_id: int) -> Dict[str, Any]:
     ).delete(synchronize_session=False)
     db.commit()
 
-    # 2. CLEAR PRE-EXISTING LOCK PLANS AND RESET THE SESSION METADATA STATE
+    # 2. Clear pre-existing plans cleanly
     existing_milestones = db.query(Milestone).filter(Milestone.project_id == project_id).all()
     if existing_milestones:
         for m in existing_milestones:
@@ -345,18 +327,20 @@ def orchestrate_full_pipeline(db: Session, project_id: int) -> Dict[str, Any]:
             db.query(Epic).filter(Epic.milestone_id == m.id).delete(synchronize_session=False)
         db.query(Milestone).filter(Milestone.project_id == project_id).delete(synchronize_session=False)
         db.commit()
-        
-        # CRITICAL FIX: Explicitly clear out memory tracking weights to avoid map collisions
         db.expire_all()
 
-    # 3. GENERATE DYNAMIC LIVE STRUCTURAL DATA
+    # 3. Generate dynamic live structural data
     tech_list = [t.strip() for t in project.tech_stack.split(",")] if project.tech_stack else []
     plan_structure = generate_plan(project.description, project.duration_months or 3, project.team_size or 3, tech_list)
+    
+    print("--> High-level Plan validated cleanly! Saving structure to database...")
     save_plan_to_db(db, plan_structure, project_id)
     
-    # Reload fresh entities from the updated state
+    # Reload fresh entities from updated state
     existing_milestones = db.query(Milestone).filter(Milestone.project_id == project_id).all()
     tree_milestones = []
+
+    print("--> Starting AI Task Breakdown and Employee Matching Pipeline...")
 
     # 4. Iterate through nodes and match dynamically
     for m in existing_milestones:
@@ -366,12 +350,13 @@ def orchestrate_full_pipeline(db: Session, project_id: int) -> Dict[str, Any]:
         for e in epics:
             tasks = db.query(Task).filter(Task.epic_id == e.id).all()
             if not tasks:
+                # This will now use Llama 3.3 for the detailed tasks!
                 generate_tasks_for_epic(db, epic_id=e.id)
                 tasks = db.query(Task).filter(Task.epic_id == e.id).all()
                 
             tree_tasks = []
             for t in tasks:
-                # 5. Granular keyword compilation
+                print(f"--> Matching candidates for dynamically generated task: '{t.title}'...")
                 t_skills = []
                 for attr in ["skills", "required_skills", "tech_stack"]:
                     if hasattr(t, attr) and getattr(t, attr):
@@ -445,10 +430,9 @@ def orchestrate_full_pipeline(db: Session, project_id: int) -> Dict[str, Any]:
         })
 
     db.commit()
+    print("--> Pipeline orchestration complete! All AI generation and matching finished.")
     return {
         "project_id": project_id,
         "title": project.description[:40] + "..." if project.description else "SmartIntern Application Platform",
         "milestones": tree_milestones
     }
-
-

@@ -1,36 +1,36 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ai-pm-system Dashboard</title>
+    <title>AI PM System — Project Dashboard</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#111827',
+                            900: '#0f172a',
+                            950: '#020617',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
     <!-- Core React & Babel Development Dependencies -->
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f8; margin: 0; padding: 20px; color: #333; }
-        .container { max-width: 1000px; margin: 0 auto; }
-        .card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }
-        h1, h2, h3 { margin-top: 0; color: #1a202c; }
-        .form-group { margin-bottom: 12px; display: flex; flex-direction: column; }
-        .form-group label { font-weight: 600; margin-bottom: 4px; }
-        input, textarea { padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 14px; }
-        button { background: #3182ce; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #2b6cb0; }
-        .milestone { border-left: 3px solid #3182ce; padding-left: 15px; margin: 15px 0; }
-        .epic { margin: 10px 0 10px 20px; background: #f7fafc; padding: 10px; border-radius: 6px; }
-        .task { background: #fff; border: 1px solid #e2e8f0; padding: 12px; margin: 8px 0 8px 20px; border-radius: 4px; }
-        .match-badge { display: inline-block; background: #ebf8ff; color: #2b6cb0; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-        .btn-success { background: #48bb78; margin-right: 5px; }
-        .btn-success:hover { background: #38a169; }
-        .btn-danger { background: #f56565; }
-        .btn-danger:hover { background: #e53e3e; }
-        .status-msg { color: #2b6cb0; font-weight: 500; }
-        .control-row { display: flex; align-items: center; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
-    </style>
 </head>
-<body>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased selection:bg-indigo-500 selection:text-white">
+
     <div id="root"></div>
 
     <script type="text/babel">
@@ -39,6 +39,7 @@
             const [projectData, setProjectData] = React.useState(null);
             const [resumeFile, setResumeFile] = React.useState(null);
             const [uploadStatus, setUploadStatus] = React.useState('');
+            const [isLoading, setIsLoading] = React.useState(false);
             
             // Project Input Fields
             const [desc, setDesc] = React.useState('Build an online storefront matching local weavers directly to commercial bulk buyers.');
@@ -46,13 +47,13 @@
             const [teamSize, setTeamSize] = React.useState(3);
             const [tech, setTech] = React.useState('Python, FastAPI, React, SQLite');
             
-            // Support fetching with a direct ID argument to bypass state latency
             const fetchFullPipelineTree = async (targetId) => {
                 const idToFetch = targetId || projectId;
                 if (!idToFetch) {
                     alert("Please enter or generate a Project ID first.");
                     return;
                 }
+                setIsLoading(true);
                 try {
                     const res = await fetch(`http://localhost:8000/projects/${idToFetch}/orchestrate`, { method: 'POST' });
                     if (res.ok) {
@@ -63,23 +64,26 @@
                     }
                 } catch (err) {
                     console.error("Error connecting to backend API:", err);
+                } finally {
+                    setIsLoading(false);
                 }
             };
 
             const handleCreateProject = async (e) => {
                 e.preventDefault();
+                setIsLoading(true);
                 const url = `http://localhost:8000/projects/create-project?description=${encodeURIComponent(desc)}&duration_months=${duration}&team_size=${teamSize}&tech_stack=${encodeURIComponent(tech)}`;
                 try {
                     const res = await fetch(url, { method: 'POST' });
                     if (res.ok) {
                         const data = await res.json();
                         setProjectId(data.id);
-                        alert(`Project instantiated inside database environment with ID: ${data.id}`);
-                        // Immediately trigger mapping with the new ID to bypass async state update lag
-                        fetchFullPipelineTree(data.id);
+                        await fetchFullPipelineTree(data.id);
                     }
                 } catch (err) {
                     console.error("Error creating project:", err);
+                } finally {
+                    setIsLoading(false);
                 }
             };
 
@@ -89,18 +93,18 @@
                 const formData = new FormData();
                 formData.append('file', resumeFile);
 
-                setUploadStatus('Processing document parsing vectors...');
+                setUploadStatus('Parsing profile vectors with NLP engine...');
                 try {
                     const res = await fetch('http://localhost:8000/projects/employees/upload-resume', { method: 'POST', body: formData });
                     if (res.ok) {
-                        setUploadStatus('Success! Profile fields parsed and persistent tables updated.');
+                        setUploadStatus('Success! Profile parsed and candidate added to talent pool.');
                         fetchFullPipelineTree();
                     } else {
-                        setUploadStatus('Document structural extraction failed.');
+                        setUploadStatus('Extraction failed. Check file format.');
                     }
                 } catch (err) {
                     console.error("Error uploading resume:", err);
-                    setUploadStatus('Document structural extraction failed.');
+                    setUploadStatus('Extraction failed due to network error.');
                 }
             };
 
@@ -111,7 +115,6 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ status: statusValue })
                     });
-                    alert(`Human-in-the-loop validation recorded: Assignment marked as ${statusValue}.`);
                     fetchFullPipelineTree();
                 } catch (err) {
                     console.error("Error recording assignment decision:", err);
@@ -119,106 +122,234 @@
             };
 
             return (
-                <div className="container">
-                    <h1>ai-pm-system Management Dashboard</h1>
+                <div className="max-w-7xl mx-auto px-4 py-8">
+                    {/* Header Banner */}
+                    <header className="mb-10 flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800/80 pb-6">
+                        <div>
+                            <div className="flex items-center gap-3">
+                                <span className="h-3 w-3 rounded-full bg-indigo-500 animate-ping"></span>
+                                <h1 className="text-3xl font-extrabold bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 bg-clip-text text-transparent">
+                                    SmartIntern AI Project Engine
+                                </h1>
+                            </div>
+                            <p className="text-slate-400 text-sm mt-1">Autonomous LLM Milestone Planning & Algorithmic Talent Matcher</p>
+                        </div>
+                        <div className="mt-4 md:mt-0 flex items-center gap-2">
+                            <span className="px-3 py-1 bg-slate-900 border border-slate-800 rounded-full text-xs font-medium text-slate-300">
+                                Llama 3.3 70B Active
+                            </span>
+                        </div>
+                    </header>
 
-                    {/* Step 1: Project Architecture Setup */}
-                    <div className="card">
-                        <h2>1. Project Initialization & Context Generation</h2>
-                        <form onSubmit={handleCreateProject}>
-                            <div className="form-group">
-                                <label>Project Description Spec</label>
-                                <textarea rows="2" value={desc} onChange={e => setDesc(e.target.value)} />
-                            </div>
-                            <div style={{ display: 'flex', gap: '15px' }}>
-                                <div className="form-group" style={{ flex: 1 }}>
-                                    <label>Duration (Months)</label>
-                                    <input type="number" value={duration} onChange={e => setDuration(e.target.value)} />
-                                </div>
-                                <div className="form-group" style={{ flex: 1 }}>
-                                    <label>Team Size</label>
-                                    <input type="number" value={teamSize} onChange={e => setTeamSize(e.target.value)} />
-                                </div>
-                                <div className="form-group" style={{ flex: 2 }}>
-                                    <label>Technical Stack</label>
-                                    <input type="text" value={tech} onChange={e => setTech(e.target.value)} />
-                                </div>
-                            </div>
-                            
-                            <div className="control-row">
-                                <button type="submit">Create Project Entry</button>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Control Column */}
+                        <div className="space-y-6">
+                            {/* Step 1: Project Form */}
+                            <div className="bg-slate-900/90 backdrop-blur border border-slate-800 rounded-2xl p-6 shadow-2xl">
+                                <h2 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
+                                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 text-xs font-semibold">1</span>
+                                    Project Parameters
+                                </h2>
                                 
-                                <div style={{ borderLeft: '1px solid #cbd5e0', height: '30px', margin: '0 10px' }}></div>
+                                <form onSubmit={handleCreateProject} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-400 mb-1">Project Description Spec</label>
+                                        <textarea 
+                                            rows="3" 
+                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                            value={desc} 
+                                            onChange={e => setDesc(e.target.value)} 
+                                        />
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-400 mb-1">Duration (Months)</label>
+                                            <input 
+                                                type="number" 
+                                                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                                value={duration} 
+                                                onChange={e => setDuration(e.target.value)} 
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-slate-400 mb-1">Team Size</label>
+                                            <input 
+                                                type="number" 
+                                                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                                value={teamSize} 
+                                                onChange={e => setTeamSize(e.target.value)} 
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-medium text-slate-400 mb-1">Technical Stack</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                                            value={tech} 
+                                            onChange={e => setTech(e.target.value)} 
+                                        />
+                                    </div>
+
+                                    <button 
+                                        type="submit" 
+                                        className="w-full bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-500 hover:to-sky-500 text-white font-semibold py-3 px-4 rounded-xl transition duration-200 text-sm shadow-lg shadow-indigo-600/20"
+                                    >
+                                        Generate & Execute Pipeline
+                                    </button>
+                                </form>
+
+                                <div className="mt-6 pt-4 border-t border-slate-800 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-slate-400">Project ID:</span>
+                                        <input 
+                                            type="number" 
+                                            className="w-16 bg-slate-950 border border-slate-800 rounded-lg p-1 text-center text-xs text-slate-200"
+                                            value={projectId || ''} 
+                                            onChange={e => setProjectId(parseInt(e.target.value) || '')} 
+                                        />
+                                    </div>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => fetchFullPipelineTree()} 
+                                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition"
+                                    >
+                                        Sync Tree
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Step 2: Resume Ingestion */}
+                            <div className="bg-slate-900/90 backdrop-blur border border-slate-800 rounded-2xl p-6 shadow-2xl">
+                                <h2 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
+                                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-sky-500/20 text-sky-400 text-xs font-semibold">2</span>
+                                    Parse Candidate Profile
+                                </h2>
                                 
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <label style={{ fontWeight: 'bold' }}>Active Project ID:</label>
+                                <form onSubmit={handleResumeUpload} className="space-y-4">
                                     <input 
-                                        type="number" 
-                                        style={{ width: '60px', padding: '6px' }} 
-                                        value={projectId || ''} 
-                                        onChange={e => setProjectId(parseInt(e.target.value) || '')} 
+                                        type="file" 
+                                        accept=".pdf,.docx" 
+                                        onChange={e => setResumeFile(e.target.files[0])}
+                                        className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer" 
                                     />
-                                </div>
-                                
-                                <button 
-                                    type="button" 
-                                    onClick={() => fetchFullPipelineTree()} 
-                                    style={{ background: '#4a5568' }}
-                                >
-                                    Fetch Unified Pipeline Tree
-                                </button>
+                                    <button 
+                                        type="submit" 
+                                        className="w-full bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold py-2.5 px-4 rounded-xl transition text-xs border border-slate-700/50"
+                                    >
+                                        Extract Skills & Ingest Candidate
+                                    </button>
+                                </form>
+
+                                {uploadStatus && (
+                                    <p className="mt-3 text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 rounded-lg p-2.5">
+                                        {uploadStatus}
+                                    </p>
+                                )}
                             </div>
-                        </form>
-                    </div>
+                        </div>
 
-                    {/* Step 2: Employee Ingestion */}
-                    <div className="card">
-                        <h2>2. Parse Candidate & Team Member Profiles</h2>
-                        <form onSubmit={handleResumeUpload}>
-                            <input type="file" accept=".pdf,.docx" onChange={e => setResumeFile(e.target.files[0])} />
-                            <button type="submit" style={{ marginLeft: '10px' }}>Upload Portfolio</button>
-                        </form>
-                        {uploadStatus && <p className="status-msg">{uploadStatus}</p>}
-                    </div>
+                        {/* Pipeline Display Area */}
+                        <div className="lg:col-span-2">
+                            {isLoading ? (
+                                <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
+                                    <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
+                                    <p className="text-slate-200 font-medium text-sm">Evaluating architecture with Groq Llama 3.3...</p>
+                                    <p className="text-slate-500 text-xs mt-1">Generating milestones, breaking down epics, and matching candidates.</p>
+                                </div>
+                            ) : projectData ? (
+                                <div className="space-y-6">
+                                    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                                Active Plan Tree
+                                            </span>
+                                            <span className="text-xs text-slate-400">Project ID: #{projectId}</span>
+                                        </div>
+                                        <h2 className="text-xl font-bold text-white">{projectData.title}</h2>
+                                    </div>
 
-                    {/* Step 3: Interactive Resource Allocator */}
-                    {projectData && (
-                        <div className="card">
-                            <h2>3. Automated Tree Orchestration & Task Matching Matrix</h2>
-                            <h3>Project: {projectData.title} (ID: {projectId})</h3>
-                            {projectData.milestones?.map(m => (
-                                <div key={m.id} className="milestone">
-                                    <h4>📍 Milestone: {m.title}</h4>
-                                    {m.epics?.map(e => (
-                                        <div key={e.id} className="epic">
-                                            <h5>📦 Epic: {e.title}</h5>
-                                            {e.tasks?.map(t => (
-                                                <div key={t.id} className="task">
-                                                    <strong>📋 Task:</strong> {t.title} <br />
-                                                    <small style={{ color: '#718096' }}>{t.description}</small> <br />
-                                                    
-                                                    {t.suggested_assignee ? (
-                                                        <div style={{ marginTop: '8px' }}>
-                                                            <span className="match-badge">
-                                                                👤 Vector Recommended Candidate: {t.suggested_assignee.name} 
-                                                                (Match Score: {(t.suggested_assignee.final_score * 100).toFixed(1)}%)
-                                                            </span>
-                                                            <div style={{ marginTop: '6px' }}>
-                                                                <button className="btn-success" onClick={() => handleAssignmentDecision(t.id, 'confirmed')}>Approve Suggestion</button>
-                                                                <button className="btn-danger" onClick={() => handleAssignmentDecision(t.id, 'rejected')}>Reject Suggestion</button>
-                                                            </div>
+                                    {/* Milestone Cards */}
+                                    {projectData.milestones?.map((m, mIdx) => (
+                                        <div key={m.id} className="bg-slate-900/80 backdrop-blur border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                                            <div className="flex items-center gap-3 border-b border-slate-800 pb-3">
+                                                <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg text-xs font-bold">
+                                                    M{mIdx + 1}
+                                                </span>
+                                                <h3 className="text-lg font-bold text-slate-100">📍 {m.title}</h3>
+                                            </div>
+
+                                            {/* Epics */}
+                                            <div className="space-y-4 pt-1">
+                                                {m.epics?.map((e) => (
+                                                    <div key={e.id} className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
+                                                        <h4 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                                                            <span className="text-sky-400">📦</span> {e.title}
+                                                        </h4>
+
+                                                        {/* Tasks */}
+                                                        <div className="grid grid-cols-1 gap-2.5">
+                                                            {e.tasks?.map((t) => (
+                                                                <div key={t.id} className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 flex flex-col justify-between gap-2">
+                                                                    <div>
+                                                                        <div className="flex justify-between items-start">
+                                                                            <p className="text-xs font-medium text-slate-200">📋 {t.title}</p>
+                                                                        </div>
+                                                                        {t.description && (
+                                                                            <p className="text-[11px] text-slate-400 mt-1">{t.description}</p>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* Assignee Match Badge */}
+                                                                    <div className="mt-2 pt-2 border-t border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                                        {t.suggested_assignee ? (
+                                                                            <>
+                                                                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs">
+                                                                                    <span>👤</span>
+                                                                                    <span className="font-semibold">{t.suggested_assignee.name}</span>
+                                                                                    <span className="text-[10px] text-emerald-500">
+                                                                                        ({(t.suggested_assignee.final_score * 100).toFixed(0)}% Match)
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-1">
+                                                                                    <button 
+                                                                                        onClick={() => handleAssignmentDecision(t.id, 'confirmed')}
+                                                                                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-medium transition"
+                                                                                    >
+                                                                                        Approve
+                                                                                    </button>
+                                                                                    <button 
+                                                                                        onClick={() => handleAssignmentDecision(t.id, 'rejected')}
+                                                                                        className="px-2.5 py-1 bg-rose-600/80 hover:bg-rose-500 text-white rounded-lg text-[11px] font-medium transition"
+                                                                                    >
+                                                                                        Reject
+                                                                                    </button>
+                                                                                </div>
+                                                                            </>
+                                                                        ) : (
+                                                                            <span className="text-[11px] text-amber-400/90 flex items-center gap-1">
+                                                                                ⚠️ No matching resource located inside environment pool.
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
                                                         </div>
-                                                    ) : (
-                                                        <p style={{ color: '#dd6b20', margin: '5px 0 0 0', fontSize: '13px' }}>⚠️ No matching resource located inside environment pool.</p>
-                                                    )}
-                                                </div>
-                                            ))}
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
-                            ))}
+                            ) : (
+                                <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center text-slate-500 min-h-[300px] flex items-center justify-center">
+                                    <p className="text-sm">Submit project parameters to generate a live AI plan tree.</p>
+                                </div>
+                            )}
                         </div>
-                    )}
+                    </div>
                 </div>
             );
         }
